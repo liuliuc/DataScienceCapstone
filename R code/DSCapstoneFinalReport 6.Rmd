@@ -1,0 +1,452 @@
+---
+title: "DS Capstone Final Report"
+author: "Li Liu"
+date: "4/21/2020"
+output: html_document
+---
+
+### Introduction
+
+This project is to do exploratory data analyze to build the base for later modeling. The data set has been language filtered, but may still contain some foreign text need to be cleaned.
+
+We'll first do some basic exploratory data analysis for the three files (word counts, line counts and basic tables), then plot histograms to illustrate features of the data. 
+
+### Get Data
+
+Get the 3 files (en_US.blogs.txt, en_US.news.txt and en_US.twitter.txt) with readLines() function, summarize data and generate a data table with wordcounts and linecounts. 
+
+```{r rawdata, echo=FALSE, warning=FALSE}
+(if (!require("quanteda", quietly = TRUE) ) install.packages("quanteda"))
+library(quanteda)
+(if (!require("corpus", quietly = TRUE) ) install.packages("corpus"))
+library(corpus)
+(if (!require("dplyr", quietly = TRUE) ) install.packages("dplyr"))
+library(dplyr)
+(if (!require("stringr", quietly = TRUE) ) install.packages("stringr"))
+library(stringr)
+(if (!require("ggplot2", quietly = TRUE) ) install.packages("ggplot2"))
+library(ggplot2)
+(if (!require("knitr", quietly = TRUE) ) install.packages("knitr"))
+library(knitr)
+(if (!require("wordcloud2", quietly = TRUE) ) install.packages("wordcloud2"))
+library(wordcloud2)
+(if (!require("readtext", quietly = TRUE) ) install.packages("readtext"))
+library(readtext)
+if (!require("data.table", quietly = TRUE)) {install.packages("data.table")}
+library(data.table)
+if (!require("tidyr", quietly = TRUE)) {install.packages("tidyr")}
+library(tidyr)
+
+#(if (!require("tidyverse", quietly = TRUE) ) install.packages("tidyverse",type="source"))
+#library(tidyverse)
+# load libraries
+#(if (!require("readtext", quietly = TRUE) ) install.packages("readtext"))
+#library(readtext)
+#(if (!require("tm", quietly = TRUE) ) install.packages("tm"))
+#library(tm)
+#(if (!require("tidytext", quietly = TRUE) ) install.packages("tidytext"))
+#library(tidytext)
+#(if (!require("RWeka", quietly = TRUE) ) install.packages("RWeka"))
+#library
+
+# Get files
+setwd("C:/Users/LLIU01/Desktop/Temp/Coursera/DataScienceCapstoneProject/DSCapstoneShiny")
+
+# File size
+size.blogs=file.info("./en_US.blogs.txt")$size
+size.news=file.info("./en_US.news.txt")$size
+size.twitter=file.info("./en_US.twitter.txt")$size
+
+# read files by line
+# Lines and word counts of blogs
+blogs=readLines(con<-file("./en_US.blogs.txt","r"),skipNul=TRUE)
+close(con)
+line.blogs=length(blogs)
+word.blogs=summary(nchar(blogs))
+total.word.blogs=sum(nchar(blogs))
+
+# Lines and word counts of news
+news=readLines(con<-file("./en_US.news.txt","r"),skipNul=TRUE)
+close(con)
+line.news=length(news)
+word.news=summary(nchar(news))
+total.word.news=sum(nchar(news))
+
+# Lines and word counts of twitter
+twitter=readLines(con<-file("./en_US.twitter.txt","r"),skipNul=TRUE)
+close(con)
+line.twitter=length(twitter)
+word.twitter=summary(nchar(twitter))
+total.word.twitter=sum(nchar(twitter))
+
+# Generate data table
+filesizes=c(size.blogs,size.news,size.twitter)
+linecounts=c(line.blogs,line.news,line.twitter)
+totalwords=c(total.word.blogs,total.word.news,total.word.twitter)
+minwords=c(min(word.blogs),min(word.news),min(word.twitter))
+maxwords=c(max(word.blogs),max(word.news),max(word.twitter))
+
+knitr::kable(data.frame(Dataset=c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt"), FileSize=paste0(round(filesizes/10^6,0)," MB"), Lines=paste0(round(linecounts)), TotalWords=paste0(round(totalwords)), MinWords=paste0(minwords), MaxWords=paste0(round(maxwords))))
+
+# release memory
+file.blogs = NULL
+file.news = NULL
+file.twitter = NULL
+size.blogs = NULL
+size.news = NULL
+size.twitter = NULL
+line.blogs = NULL
+lile.news = NULL
+lile.twitter = NULL
+word.blogs = NULL
+word.news = NULL
+word.twitter = NULL
+total.word.blogs = NULL
+total.word.news = NULL
+total.word.twitter = NULL
+filesizes = NULL
+linecounts = NULL
+totalwords = NULL
+minword = NULL
+maxword = NULL
+gc() # clean gabage
+```
+
+### Tidying Data
+
+Tidying the data by removing non-English words and reformatting: lower case conversion, removing whitespace, etc. Then convert the data frame to corpus.
+
+```{r tidying, echo=TRUE, warning=FALSE}
+
+# read files by readtext
+blogs<-readtext("./en_US.blogs.txt")
+news<- readtext("./en_US.news.txt")
+twitter<- readtext("./en_US.twitter.txt")
+
+# get profanity words lists (downloaded list from  https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words)
+profanityList=readtext("./ProfanitywordsEN.txt")
+profanity <- paste0(profanityList, collapse="|")
+urltag <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+
+# sampling 3 files into one
+set.seed(2020)
+mysample <- c(sample(blogs,length(blogs)*0.75,replace=FALSE),
+                 sample(news,length(news)*0.75,replace=FALSE),
+                 sample(twitter,length(twitter)*0.75,replace=FALSE))
+mysample.df <- data_frame(text=mysample) # convert to data frame
+save(mysample.df, file = "mysample.df.RData")
+mysample.tidy <- mysample.df %>%
+    mutate(text = str_replace_all(text, profanity, "")) %>% 
+    mutate(text = tolower(text)) %>% 
+    mutate(text = str_replace_all(text, "<.*?>","")) %>% # Remove HTML/XML
+    mutate(text = str_replace_all(text, urltag, "")) %>% # Remove URL
+    mutate(text = str_replace_all(text, "(.{2,})\\1", "\\1")) %>% # remove 2+ repeats
+    mutate(text = str_replace_all(text, "[:punct:]"," ")) %>% # Remove punctation
+    mutate(text = str_replace_all(text, "[^A-Za-z ]",""))
+save(mysample.tidy, file = "mysample.tidy.RData")
+
+# create corpus
+mysamplecorpus <- corpus(mysample.tidy)
+save(mysamplecorpus, file = "mysamplecorpus.RData")
+
+
+# combine all 3 files into one
+mydata <- rbind(blogs,news,twitter)
+save(mydata, file = "mydata.RData")
+
+mydata.tidy <- mydata %>%
+    mutate(text = str_replace_all(text, profanity, "")) %>% 
+    mutate(text = tolower(text)) %>% 
+    mutate(text = str_replace_all(text, "<.*?>","")) %>% # Remove HTML/XML
+    mutate(text = str_replace_all(text, urltag, "")) %>% # Remove URL
+    mutate(text = str_replace_all(text, "(.{2,})\\1", "\\1")) %>% # remove 2+ repeats
+    mutate(text = str_replace_all(text, "[:punct:]"," ")) %>% # Remove punctation
+    mutate(text = str_replace_all(text, "[^A-Za-z ]",""))
+save(mydata.tidy, file = "mydata.tidy.RData")
+
+# create corpus
+mycorpus <- corpus(mydata.tidy)
+save(mycorpus, file = "mytcorpus.RData")
+
+# release memory
+blogs = NULL
+news = NULL
+twitter = NULL
+mydata = NULL
+mydata.df = NULL
+mydata.tidy = NULL
+gc() # clean gabage
+```
+
+### Tokenizing
+
+Use the quanteda package to construct functions that tokenize the sample and generate matrices of unigrams, bigrams, and trigrams. 
+
+```{r tokenizing, echo=FALSE, warning=FALSE}
+mytokens <- tokens(mysamplecorpus) %>%
+    tokens(remove_punct=TRUE,remove_twitter=TRUE,remove_numbers=TRUE,remove_separators=TRUE) %>%
+    tokens_remove(pattern=letters) %>%
+    tokens_remove(stopwords("english")) %>%
+    tokens_wordstem()
+save(mytokens, file = "mytokens.RData")
+
+# release memory
+mycorpus = NULL
+gc() # clean gabage
+
+#generate ngrams
+unigram <- tokens_ngrams(mytokens,n=1) 
+save(unigram, file = "unigram.RData")
+bigram <- tokens_ngrams(mytokens,n=2)
+save(bigram, file = "bigram.RData")
+trigram <- tokens_ngrams(mytokens,n=3)
+save(trigram, file = "trigram.RData")
+fourgram <- tokens_ngrams(mytokens,n=4)
+save(fourgram, file = "fourgram.RData")
+fivegram <- tokens_ngrams(mytokens,n=5)
+save(fivegram, file = "fivegram.RData")
+
+# release memory
+mytokens = NULL
+gc() # clean gabage
+```
+
+### Calculate Frequency
+
+Use quanteda to calculate the word frequency and the freqency of all three matrices, sort the data.
+
+```{r frequency, echo=TRUE, warning=FALSE}
+uni.dfm <- dfm(unigram)
+save(uni.dfm, file = "uni.dfm.RData")
+#load("unigram.RData")
+uni.freq <- textstat_frequency(uni.dfm)
+save(uni.freq, file = "uni.freq.RData")
+uni.freq2 <- uni.freq[uni.freq$frequency>1,na.rm=TRUE,1:2]
+save(uni.freq2, file = "uni.freq2.RData")
+
+bi.dfm <- dfm(bigram)
+save(bi.dfm, file = "bi.dfm.RData")
+bi.freq <- textstat_frequency(bi.dfm)
+save(bi.freq, file = "bi.freq.RData")
+bi.freq2 <- bi.freq[bi.freq$frequency>1,na.rm=TRUE,1:2]
+save(bi.freq2, file = "bi.freq2.RData")
+bi.prob2 <- bi.freq2[order(bi.freq2$feature,-bi.freq2$frequency),] %>% 
+    mutate(prob=(frequency/sum(frequency)),na.rm=TRUE)
+bi.prob2 <- bi.prob2[,c(1,3)]
+save(bi.prob2, file = "bi.prob2.RData")
+bi.prob2.dt <- as.data.table(bi.prob2)
+save(bi.prob2.dt, file = "bi.prob2.dt.RData")
+bi.lookup2 <- bi.prob2.dt %>% 
+    separate(feature,c("feature","suggest"),"\\_(?!.*_)",extra="merge",fill="left") %>%
+    setkey(feature)
+save(bi.lookup2, file = "bi.lookup2.RData")
+
+tri.dfm <- dfm(trigram)
+save(tri.dfm, file = "tri.dfm.RData")
+tri.freq <- textstat_frequency(tri.dfm)
+save(tri.freq, file = "tri.freq.RData")
+tri.freq2 <- tri.freq[tri.freq$frequency>1,na.rm=TRUE,1:2]
+save(tri.freq2, file = "tri.freq2.RData")
+tri.prob2 <- tri.freq2[order(tri.freq2$feature,-tri.freq2$frequency),] %>% 
+    mutate(prob=(frequency/sum(frequency)),na.rm=TRUE)
+tri.prob2 <- tri.prob2[,c(1,3)]
+save(tri.prob2, file = "tri.prob2.RData")
+tri.prob2.dt <- as.data.table(tri.prob2,key="feature")
+save(tri.prob2.dt, file = "tri.prob2.dt.RData")
+# use negative lookahead to split feature
+tri.lookup2 <- tri.prob2.dt %>%
+    separate(feature,c("feature","suggest"),"\\_(?!.*_)",extra="merge",fill="left") %>%
+    setkey(feature)
+save(tri.lookup2, file = "tri.lookup2.RData")
+
+four.dfm <- dfm(fourgram)
+save(four.dfm, file = "four.dfm.RData")
+four.freq <- textstat_frequency(four.dfm)
+save(four.freq, file = "four.freq.RData")
+four.freq2 <- four.freq[four.freq$frequency>1,na.rm=TRUE,1:2]
+save(four.freq2, file = "four.freq2.RData")
+four.prob2 <- four.freq2[order(four.freq2$feature,-four.freq2$frequency),] %>% 
+    mutate(prob=(frequency/sum(frequency)),na.rm=TRUE)
+four.prob2 <- four.prob2[,c(1,3)]
+save(four.prob2, file = "four.prob2.RData")
+four.prob2.dt <- as.data.table(four.prob2,key="feature")
+save(four.prob2.dt, file = "four.prob2.dt.RData")
+four.lookup2 <- four.prob2.dt %>%
+    separate(feature,c("feature","suggest"),"\\_(?!.*_)",extra="merge",fill="left") %>%
+    setkey(feature)
+save(four.lookup2, file = "four.lookup2.RData")
+
+five.dfm <- dfm(fourgram)
+save(five.dfm, file = "five.dfm.RData")
+five.freq <- textstat_frequency(five.dfm)
+save(five.freq, file = "five.freq.RData")
+five.freq2 <- five.freq[five.freq$frequency>1,na.rm=TRUE,1:2] %>% 
+save(five.freq2, file = "five.freq2.RData")
+
+nrows2=c(nrow(uni.freq2),nrow(bi.freq2),nrow(tri.freq2),nrow(four.freq2),nrow(five.freq2))
+max.freq2=c(max(uni.freq2$freq),max(bi.freq2$freq),max(tri.freq2$freq),max(four.freq2$freq),max(five.freq2$freq))
+
+load("nrows2.RData")
+load("max.freq2.RData")
+knitr::kable(data.frame(Ngram=c("uni.freq","bi.freq","tri.freq","four.freq","five.freq"),nRows=paste0(nrows2), MaxFreqency=paste0(max.freq2)))
+
+# release memory
+unigram = NULL
+uni.dfm = NULL
+uni.freq = NULL
+bigram = NULL
+bi.dfm = NULL
+bi.freq = NULL
+trigram = NULL
+tri.dfm = NULL
+tri.freq = NULL
+fourgram = NULL
+four.dfm = NULL
+four.freq = NULL
+fivegram = NULL
+five.dfm = NULL
+five.freq = NULL
+gc() # clean gabage
+```
+
+### Histogram Plots
+
+Plot the frequencies of the top 20 words in the 3 files. 
+```{r plots, echo=TRUE, warning=FALSE}
+#par(mfrow=c(2,2),mar=c(4,4,2,1)) # to create an empty canvas
+ggplot(uni.freq2[1:20,], aes(factor(feature,levels=unique(feature)),frequency)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x=element_text(angle=90)) +
+  labs(title="Unigram",x="Top20 Words",y="Frequency") 
+
+ggplot(bi.freq2[1:20,], aes(factor(feature,levels=unique(feature)),frequency)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x=element_text(angle=90)) +
+  labs(title="Bigram",x="Top20 Words",y="Frequency")
+
+par(mfrow=c(1,2),mar=c(8,4,2,1)) # to create an empty canvas
+ggplot(tri.freq2[1:20,], aes(factor(feature,levels=unique(feature)),frequency)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x=element_text(angle=90)) +
+  labs(title="Trigram",x="Top20 Words",y="Frequency") 
+
+ggplot(four.freq2[1:20,], aes(factor(feature,levels=unique(feature)),frequency)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x=element_text(angle=90)) +
+  labs(title="fourgram",x="Top20 Words",y="Frequency") 
+
+ggplot(five.freq2[1:20,], aes(factor(feature,levels=unique(feature)),frequency)) +
+  geom_bar(stat = 'identity') +
+  theme(axis.text.x=element_text(angle=90)) +
+  labs(title="fivegram",x="Top20 Words",y="Frequency") 
+
+load("fiveplot2.RData")
+load("fourplot2.RData")
+load("triplot2.RData")
+load("biplot2.RData")
+load("uniplot2.RData")
+
+uniplot2
+biplot2
+triplot2
+fourplot2
+fiveplot2
+```
+
+### Wordcloud Plots of the frequencies of the top20 words in the 3 files.
+
+```{r wordcloud, echo=TRUE, warning=FALSE}
+set.seed(123)
+#par(mfrow=c(2,2),mar=c(4,4,2,1))
+wordcloud2(uni.freq2[1:100,],size=0.7)
+wordcloud2(bi.freq2[1:100,],size=0.4)
+wordcloud2(tri.freq2[1:100,],size=0.3)
+wordcloud2(four.freq2[1:100,],size=0.2)
+wordcloud2(five.freq2[1:100,],size=0.3)
+
+load("fivewc2.RData")
+load("fourwc2.RData")
+load("triwc2.RData")
+load("biwc2.RData")
+load("uniwc2.RData")
+
+uniwc2
+biwc2
+triwc2
+fourwc2
+fivewc2
+```
+
+### Predict using N-gram
+
+To build a predictive model using the N-gram model. First run the test sentence through the same tidying process, then start from searching the last trigram in the quartgram model, followed by searching the last bigram in the trigram model, then search the last unigram in the bigram model.
+
+```{r prediction, echo=TRUE, warning=FALSE}
+
+setwd("C:/Users/LLIU01/Desktop/Temp/Coursera/DataScienceCapstoneProject")
+load("five.freq2.RData")
+load("four.freq2.RData")
+load("tri.freq2.RData")
+load("bi.freq2.RData")
+
+myinquiry="Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my"
+myinquiry.df <- data_frame(text=myinquiry)
+
+urltag <- "http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+myinquiry.tidy <- myinquiry.df %>%
+    mutate(text = tolower(text)) %>% 
+    mutate(text = str_replace_all(text, "<.*?>","")) %>% # Remove HTML/XML
+    mutate(text = str_replace_all(text, urltag, "")) %>% # Remove URL
+    mutate(text = str_replace_all(text, "(.{2,})\\1", "\\1")) %>% # remove 2+ repeats
+    mutate(text = str_replace_all(text, "[:punct:]"," ")) %>% # Remove punctation
+    mutate(text = str_replace_all(text, "[^A-Za-z ]",""))
+myinquiry.corpus <- corpus(myinquiry.tidy)
+myinquiry.tokens <- tokens(myinquiry.corpus) %>%
+    tokens(remove_punct=TRUE,remove_numbers=TRUE,remove_separators=TRUE) %>%
+    tokens_remove(pattern=letters) %>%
+    tokens_wordstem()
+inquiry.unigram <- tokens_ngrams(myinquiry.tokens,n=1) 
+inquiry.bigram <- tokens_ngrams(myinquiry.tokens,n=2)
+inquiry.trigram <- tokens_ngrams(myinquiry.tokens,n=3)
+inquiry.fourgram <- tokens_ngrams(myinquiry.tokens,n=4)
+
+inquiry4 <- tail(as.character(inquiry.fourgram),1)
+match4 <- five.freq2[grep(paste0("^",inquiry4),five.freq2$feature)]
+#match4.prob <- na.omit(match4) %>% mutate(frequency=(frequency/sum(frequency)))
+pred4 <- head(match4,10)
+
+inquiry3 <- tail(as.character(inquiry.trigram),1)
+match3 <- four.freq3[grep(paste0("^",inquiry3),four.freq2$feature)]
+#match3.prob <- na.omit(match3) %>% mutate(frequency=(frequency/sum(frequency)))
+pred3 <- head(match3,10)
+
+inquiry2 <- tail(as.character(inquiry.bigram),1)
+match2 <- tri.freq3[grep(paste0("^",inquiry2),tri.freq2$feature),1:2]
+match2.prob <- na.omit(match2) %>% mutate(frequency=(frequency/sum(frequency))*0.4)
+pred2 <- head(match2.prob,10)
+
+inquiry1 <- tail(as.character(inquiry.unigram),1)
+match1 <- bi.freq2[grep(paste0("^",inquiry1),bi.freq2$feature),1:2]
+match1.prob <- na.omit(match1) %>% mutate(frequency=(frequency/sum(frequency))*0.4^3)
+pred1 <- head(match1.prob,10)
+
+pred.all <- rbind(pred4, pred3, pred2, pred1)
+pred.top20 <- head(arrange(pred.all,desc(frequency)),20)
+pred.split <- strsplit(pred.top20$feature, "\\_")
+
+n = 1:length(pred.split)
+predict = NULL
+
+for (i in n) {
+    predict <- c(predict, tail(pred.split[[i]],1))
+}
+
+predict10 <- head(unique(predict),10)
+```
+
+### Summary
+
+shiny app at:
+https://liuliwest.shinyapps.io/DSCapstoneShiny/
+Presentation at:
+https://rpubs.com/liuliwest/620669
